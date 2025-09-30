@@ -75,9 +75,21 @@ jobs:
           script: |
             set -e
             cd /home/${{ secrets.SSH_USER }}/app
-            echo "DOCKERHUB_USERNAME=${{ secrets.DOCKERHUB_USERNAME }}" > .env
-            echo "TAG=${{ github.sha }}" >> .env
-            docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" -p "${{ secrets.DOCKERHUB_TOKEN }}"
+
+            # set env for compose (.env read by docker-compose.yml)
+            printf "DOCKERHUB_USERNAME=%s\nTAG=%s\n" \
+              "${{ secrets.DOCKERHUB_USERNAME }}" "${{ github.sha }}" > .env
+
+            # --- free the ports & stop old stacks ---
+            docker ps --filter "publish=3000" -q | xargs -r docker rm -f
+            docker ps --filter "publish=3001" -q | xargs -r docker rm -f
+            docker compose -p docker-assignment-ih down || true
+            docker compose -p app down || true
+
+            # --- deploy ---
+            echo "Logging into Docker Hub..."
+            echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
             docker compose pull
-            docker compose up -d --remove-orphans
+            docker compose up -d --force-recreate --remove-orphans
             docker compose ps
+
