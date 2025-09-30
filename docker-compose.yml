@@ -1,3 +1,4 @@
+# docker-compose.yml
 services:
   db:
     image: postgres:16-alpine
@@ -9,30 +10,29 @@ services:
       - db_data:/var/lib/postgresql/data
     ports:
       - "5432:5432"
-    restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d notes_db"]
       interval: 5s
       timeout: 3s
-      retries: 20
+      retries: 10
 
   backend:
-  image: ${DOCKERHUB_USERNAME}/three-tier-backend:${TAG}
-  environment:
-    PORT: 3001
-    DATABASE_URL: postgres://postgres:password@db:5432/notes_db
-    CORS_ORIGIN: http://74.248.130.191:3000
-  depends_on:
-    - db
-  ports:
-    - "3001:3001"
-  healthcheck:
-    test: ["CMD-SHELL", "wget -qO- http://localhost:3001/health >/dev/null 2>&1 || exit 1"]
-    interval: 10s
-    timeout: 3s
-    retries: 10
-    start_period: 20s
-
+    image: ${DOCKERHUB_USERNAME}/three-tier-backend:${TAG}
+    environment:
+      PORT: 3001
+      DATABASE_URL: postgres://postgres:password@db:5432/notes_db
+      CORS_ORIGIN: http://74.248.130.191:3000
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "3001:3001"
+    # wget-based healthcheck (Alpine has busybox wget)
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3001/health || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
   frontend:
     image: ${DOCKERHUB_USERNAME}/three-tier-frontend:${TAG}
@@ -41,11 +41,9 @@ services:
       PORT: 3000
       REACT_APP_API_URL: http://74.248.130.191:3001
     depends_on:
-      backend:
-        condition: service_healthy
+      - backend
     ports:
       - "3000:3000"
-    restart: unless-stopped
 
 volumes:
   db_data:
