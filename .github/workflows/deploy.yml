@@ -1,4 +1,4 @@
-name: Build, Push and Deploy to Azure VM
+name: CI/CD
 
 on:
   push:
@@ -6,11 +6,8 @@ on:
   workflow_dispatch:
 
 env:
-  REGISTRY_USER: ${{ secrets.DOCKERHUB_USERNAME }}
-  REGISTRY_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
   IMAGE_FE: ${{ secrets.DOCKERHUB_USERNAME }}/three-tier-frontend
   IMAGE_BE: ${{ secrets.DOCKERHUB_USERNAME }}/three-tier-backend
-  TAG: ${{ github.sha }}
 
 jobs:
   build-and-push:
@@ -18,68 +15,69 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Log in to Docker Hub
+      # Important: use the container driver so GHA cache works
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          driver: docker-container
+
+      - name: Login to Docker Hub
         uses: docker/login-action@v3
         with:
-          username: ${{ env.REGISTRY_USER }}
-          password: ${{ env.REGISTRY_TOKEN }}
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Build & push FRONTEND
         uses: docker/build-push-action@v6
         with:
-           context: ./frontend
-           push: true
-           tags: |
+          context: ./frontend
+          file: ./frontend/Dockerfile
+          push: true
+          tags: |
             ${{ env.IMAGE_FE }}:${{ github.sha }}
-             ${{ env.IMAGE_FE }}:latest
-            no-cache: true       
-
+            ${{ env.IMAGE_FE }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
       - name: Build & push BACKEND
         uses: docker/build-push-action@v6
         with:
           context: ./backend
+          file: ./backend/Dockerfile
           push: true
           tags: |
             ${{ env.IMAGE_BE }}:${{ github.sha }}
             ${{ env.IMAGE_BE }}:latest
-          no-cache: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
   deploy:
     needs: build-and-push
     runs-on: ubuntu-latest
-    env:
-      TAG: ${{ github.sha }}
-      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
     steps:
       - uses: actions/checkout@v4
 
-      # Upload prod compose file
-      - name: Upload compose (prod) to VM
+      - name: Copy compose to VM
         uses: appleboy/scp-action@v0.1.7
         with:
-          host:     ${{ secrets.SSH_HOST }}
+          host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           password: ${{ secrets.SSH_PASSWORD }}
-          source:   "deploy/docker-compose.prod.yml"
-          target:   "/home/${{ secrets.SSH_USER }}/app"
-          overwrite: true
+          source: docker-compose.yml
+          target: /home/${{ secrets.SSH_USER }}/app
 
-      # Deploy via SSH
-      - name: SSH and deploy
+      - name: Deploy over SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host:     ${{ secrets.SSH_HOST }}
+          host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           password: ${{ secrets.SSH_PASSWORD }}
           script: |
             set -e
-            mkdir -p /home/${{ secrets.SSH_USER }}/app
             cd /home/${{ secrets.SSH_USER }}/app
-            # write/update .env for compose
             echo "DOCKERHUB_USERNAME=${{ secrets.DOCKERHUB_USERNAME }}" > .env
             echo "TAG=${{ github.sha }}" >> .env
-            mv deploy/docker-compose.prod.yml docker-compose.yml || true
+            docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" -p "${{ secrets.DOCKERHUB_TOKEN }}"
             docker compose pull
             docker compose up -d --remove-orphans
             docker compose ps
