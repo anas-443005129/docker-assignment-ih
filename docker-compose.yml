@@ -17,22 +17,22 @@ services:
       retries: 20
 
   backend:
-    image: ${DOCKERHUB_USERNAME}/three-tier-backend:${TAG}
-    environment:
-      PORT: 3001
-      DATABASE_URL: postgres://postgres:password@db:5432/notes_db
-      CORS_ORIGIN: http://74.248.130.191:3000
-    depends_on:
-      db:
-        condition: service_healthy
-    ports:
-      - "3001:3001"
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
-      interval: 5s
-      timeout: 3s
-      retries: 30
+  image: ${DOCKERHUB_USERNAME}/three-tier-backend:${TAG}
+  environment:
+    PORT: 3001
+    DATABASE_URL: postgres://postgres:password@db:5432/notes_db
+    CORS_ORIGIN: http://74.248.130.191:3000
+  depends_on:
+    - db
+  ports:
+    - "3001:3001"
+  healthcheck:
+    test: ["CMD-SHELL", "wget -qO- http://localhost:3001/health >/dev/null 2>&1 || exit 1"]
+    interval: 10s
+    timeout: 3s
+    retries: 10
+    start_period: 20s
+
 
   frontend:
     image: ${DOCKERHUB_USERNAME}/three-tier-frontend:${TAG}
