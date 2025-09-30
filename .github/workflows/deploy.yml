@@ -27,13 +27,13 @@ jobs:
       - name: Build & push FRONTEND
         uses: docker/build-push-action@v6
         with:
-          context: ./frontend
-          push: true
-          tags: |
-            ${{ env.IMAGE_FE }}:${{ env.TAG }}
-            ${{ env.IMAGE_FE }}:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+           context: ./frontend
+           push: true
+           tags: |
+            ${{ env.IMAGE_FE }}:${{ github.sha }}
+             ${{ env.IMAGE_FE }}:latest
+            no-cache: true       
+
 
       - name: Build & push BACKEND
         uses: docker/build-push-action@v6
@@ -41,10 +41,9 @@ jobs:
           context: ./backend
           push: true
           tags: |
-            ${{ env.IMAGE_BE }}:${{ env.TAG }}
+            ${{ env.IMAGE_BE }}:${{ github.sha }}
             ${{ env.IMAGE_BE }}:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          no-cache: true
 
   deploy:
     needs: build-and-push
